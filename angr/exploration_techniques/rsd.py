@@ -39,7 +39,15 @@ DEF SYMEX:
         else (so S_C is not at a branch):
             execute S_C # gotta assume this happens in simgr.step() but idk what even happens in that fxn
             increment S_C program counter # this is in S_C.regs, we can use S_C.regs._ip to access
-            update dynamic dependency graph # i guess this can happen in step(), because it's right after execution. this means we will need to reimplement step.
+            update dynamic dependency graph # i guess this can happen in step(), because it's right after execution. this means we will need to reimplement step
+
+            if (S_C was previously uncovered) # i guess we can have a data structure for this, can also happen in step()?
+                update relevant static branches using static graph # relevant means there is path from branch to a uncovered line, also step()?
+                update relevant location sets # each state has a rel loc set, and since we got to uncovered line, we remove vars that control that line, 
+                  -  maybe we can add relevant locations as a state attribute, that might cause a lot of drama though
+            
+            find match # search for relevant constraint set that implies this state (maybe put in prune? but idk if prune comes after step like we want it to)
+            
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 '''
