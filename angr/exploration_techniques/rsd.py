@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from .base import ExplorationTechnique
 
+class RSD(ExplorationTechnique):
+
+    def setup(self, simgr):
+        self.cfg = self.project.analyses.CFGFast() # until we figure this out, we can just use this and test on code with no calls and rets 
+
+
 ''' hiiiii
 class RSD(ExplorationTechnique):
 
@@ -47,8 +53,22 @@ DEF SYMEX:
                   -  maybe we can add relevant locations as a state attribute, that might cause a lot of drama though
             
             find match # search for relevant constraint set that implies this state (maybe put in prune? but idk if prune comes after step like we want it to)
+
+            if (state has match or is at program exit):
+                construct relevant location sets # yep this is when that's done
+                compute test inputs and delete the state
+            else:
+                add the state to the worklist
             
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Notes:
+- a state is redundant if relevant constraints for a snapshot IMPLY relevant constraints for that state 
+(relvant constraints are constraints on relevant locations/variables)
+(relevant locations are the ones that affect relevant static branches further down, this is why relevant location sets for the state are only constructed when the state reaches an exit - uhhh there's something confusing about this)
+
+static control dependence graph
+- 
 '''
 
