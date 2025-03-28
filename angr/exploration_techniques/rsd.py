@@ -7,6 +7,16 @@ class RSD(ExplorationTechnique):
     def setup(self, simgr):
         self.cfg = self.project.analyses.CFGFast() # until we figure this out, we can just use this and test on code with no calls and rets 
 
+    def step(self, simgr, stash="active", **kwargs):
+        simgr = simgr.step(stash=stash, **kwargs)
+        # i think we can use most of their step method, and there's an if stmt thats like (if something is a tuple)
+        # and we add our else clause onto it 
+        if len(simgr.successors) == 2:
+            # we are at a branch
+        else:
+            hi = 1
+            # update dynamic dependency graph (when do we even make this? setup? and whats the diff to static)
+
 
 ''' hiiiii
 class RSD(ExplorationTechnique):
@@ -22,6 +32,7 @@ selector():
 
 Questions:
 - when is the dynamic control dependence graph constructed?
+- would relevant locations be registers/memory locations?
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -35,7 +46,7 @@ DEF SYMEX:
     while (worklist is not empty):
         pop a state S_C from worklist (constraints in angr are attached to state, so yay)
 
-        if (S_C is at a branch with condition B):
+        if (S_C is at a branch with condition B): # preeetttyyy sure this is all taken care of by simgr.step() :p (?)
             fork it to S_CB and S_C!B # i think this is just a figure of speech
             if (C and B) is satisfiable: # there is a prune fxn in sim_manager.py, which prunes unsat states 
                 insert S_CB to worklist 
