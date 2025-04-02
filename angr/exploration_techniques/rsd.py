@@ -1,17 +1,151 @@
 from __future__ import annotations
+import logging
 
 from .base import ExplorationTechnique
+from collections import defaultdict
+
+l = logging.getLogger(name=__name__)
 
 class RSD(ExplorationTechnique):
 
+    def __init__(self, cdg):
+        super().__init__()
+        self.cdg = cdg
+
     def setup(self, simgr):
-        self.cfg = self.project.analyses.CFGFast() # until we figure this out, we can just use this and test on code with no calls and rets 
+        if (self.cdg is None):
+            cfg = self.project.analyses.CFGEmulated() # i am not sure if we need to set any of the parameters 
+            self.cdg = self.project.analyses.CDG(cfg)
+
+
+    def step(
+        self,
+        simgr,
+        stash="active",
+        target_stash=None,
+        n=None,
+        selector_func=None,
+        step_func=None,
+        error_list=None,
+        successor_func=None,
+        until=None,
+        filter_func=None,
+        **run_args,
+    ):
+        """
+        Step a stash of states forward and categorize the successors appropriately.
+
+        The parameters to this function allow you to control everything about the stepping and
+        categorization process.
+
+        :param stash:           The name of the stash to step (default: 'active')
+        :param target_stash:    The name of the stash to put the results in (default: same as ``stash``)
+        :param error_list:      The list to put ErrorRecord objects in (default: ``self.errored``)
+        :param selector_func:   If provided, should be a function that takes a state and returns a
+                                boolean. If True, the state will be stepped. Otherwise, it will be
+                                kept as-is.
+        :param step_func:       If provided, should be a function that takes a SimulationManager and
+                                returns a SimulationManager. Will be called with the SimulationManager
+                                at every step. Note that this function should not actually perform any
+                                stepping - it is meant to be a maintenance function called after each step.
+        :param successor_func:  If provided, should be a function that takes a state and return its successors.
+                                Otherwise, project.factory.successors will be used.
+        :param filter_func:     If provided, should be a function that takes a state and return the name
+                                of the stash, to which the state should be moved.
+        :param until:           (DEPRECATED) If provided, should be a function that takes a SimulationManager and
+                                returns True or False. Stepping will terminate when it is True.
+        :param n:               (DEPRECATED) The number of times to step (default: 1 if "until" is not provided)
+
+        Additionally, you can pass in any of the following keyword args for project.factory.successors:
+
+        :param jumpkind:        The jumpkind of the previous exit
+        :param addr:            An address to execute at instead of the state's ip.
+        :param stmt_whitelist:  A list of stmt indexes to which to confine execution.
+        :param last_stmt:       A statement index at which to stop execution.
+        :param thumb:           Whether the block should be lifted in ARM's THUMB mode.
+        :param backup_state:    A state to read bytes from instead of using project memory.
+        :param opt_level:       The VEX optimization level to use.
+        :param insn_bytes:      A string of bytes to use for the block instead of the project.
+        :param size:            The maximum size of the block, in bytes.
+        :param num_inst:        The maximum number of instructions.
+        :param traceflags:      traceflags to be passed to VEX. Default: 0
+
+        :returns:           The simulation manager, for chaining.
+        :rtype:             SimulationManager
+        """
+        l.info("Stepping %s of %s", stash, simgr)
+        # I REMOVED THE COMPATIBILITY LAYER - DONT THINK ITS NEEDED, BUT WILL LOOK MORE
+        bucket = defaultdict(list)
+        target_stash = target_stash or stash
+        error_list = error_list if error_list is not None else simgr._errored
+
+        for state in simgr._fetch_states(stash=stash):
+            goto = simgr.filter(state, filter_func=filter_func)
+            if isinstance(goto, tuple):
+                goto, state = goto
+
+            if goto not in (None, stash):
+                bucket[goto].append(state)
+                continue
+
+            if not simgr.selector(state, selector_func=selector_func):
+                bucket[stash].append(state)
+                continue
+
+            pre_errored = len(error_list)
+
+            # EXECUTION HAPPENS IN THE FOLLOWING LINE
+            successors = simgr.step_state(state, successor_func=successor_func, error_list=error_list, **run_args) # i said simgr.step_state but idk how simgr works as a parameter, but this is what other exp techs have done
+
+            '''
+            could put the intercept here, but im not sure if any of the below lines need to happen before we can intercept...another thing to look into later
+            also just to remind myself, the successors number we want is state.step() return value, but state.step and simgr.step_state call the same factory method so i think its the right thing to use in the if stmt
+            '''
+            
+            
+            # ---------------------------------------handle degenerate stepping cases here. desired behavior: ------------------------------------------
+            # if a step produced only unsat states, always add them to the unsat stash since this usually indicates bugs
+            # if a step produced sat states and save_unsat is False, drop the unsats
+            # if a step produced no successors, period, add the original state to deadended
+
+            # first check if anything happened besides unsat. that gates all this behavior
+            if not any(v for k, v in successors.items() if k != "unsat") and len(error_list) == pre_errored:
+                # then check if there were some unsats
+                if successors.get("unsat", []):
+                    # only unsats. current setup is acceptable.
+                    pass
+                else:
+                    # no unsats. we've deadended.
+                    bucket["deadended"].append(state)
+                    continue
+            else:
+                # there were sat states. it's okay to drop the unsat ones if the user said so.
+                if not simgr._save_unsat:
+                    successors.pop("unsat", None)
+
+            for to_stash, successor_states in successors.items():
+                bucket[to_stash or target_stash].extend(successor_states)
+
+        simgr._clear_states(stash=stash)
+        for to_stash, states in bucket.items():
+            for state in states:
+                if simgr._hierarchy:
+                    simgr._hierarchy.add_state(state)
+            simgr._store_states(to_stash or target_stash, states)
+
+        if step_func is not None:
+            return step_func(simgr)
+        return simgr
+   
 
     def step(self, simgr, stash="active", **kwargs):
-        simgr = simgr.step(stash=stash, **kwargs)
+        # what i think we should do is rewrite the step method and intercept the part that gets the successors with the following if stmt:
+
+        simgr = simgr.step(stash=stash, **kwargs) # this step method wont return sucessors, need to use sim_state's step method, hence the above comment
         # i think we can use most of their step method, and there's an if stmt thats like (if something is a tuple)
         # and we add our else clause onto it 
         if len(simgr.successors) == 2:
+            hi=2
             # we are at a branch
         else:
             hi = 1
