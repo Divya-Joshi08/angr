@@ -2,13 +2,14 @@ from __future__ import annotations
 import logging
 
 from .base import ExplorationTechnique
+from angr.engines.successors import SimSuccessors
 from collections import defaultdict
 
 l = logging.getLogger(name=__name__)
 
 class RSD(ExplorationTechnique):
 
-    def __init__(self, cdg):
+    def __init__(self, cdg=None):
         super().__init__()
         self.cdg = cdg
 
@@ -96,6 +97,7 @@ class RSD(ExplorationTechnique):
 
             # EXECUTION HAPPENS IN THE FOLLOWING LINE
             successors = simgr.step_state(state, successor_func=successor_func, error_list=error_list, **run_args) # i said simgr.step_state but idk how simgr works as a parameter, but this is what other exp techs have done
+            
 
             '''
             could put the intercept here, but im not sure if any of the below lines need to happen before we can intercept...another thing to look into later
@@ -112,7 +114,7 @@ class RSD(ExplorationTechnique):
             if not any(v for k, v in successors.items() if k != "unsat") and len(error_list) == pre_errored:
                 # then check if there were some unsats
                 if successors.get("unsat", []):
-                    # only unsats. current setup is acceptable.
+                    # only unsats. current setup is acceptable. Q: what if there are SOME unsats??
                     pass
                 else:
                     # no unsats. we've deadended.
@@ -126,6 +128,14 @@ class RSD(ExplorationTechnique):
             for to_stash, successor_states in successors.items():
                 bucket[to_stash or target_stash].extend(successor_states)
 
+            sim_succ = simgr.successors(state)
+            succ_list = sim_succ.all_successors
+            if len(succ_list) == 2:
+                print("WE ARE AT A BRANCH")
+                return None
+            else:
+                print("NOT AT BRANCH")
+
         simgr._clear_states(stash=stash)
         for to_stash, states in bucket.items():
             for state in states:
@@ -135,21 +145,21 @@ class RSD(ExplorationTechnique):
 
         if step_func is not None:
             return step_func(simgr)
-        return simgr
+        return simgr # I CHANGED THIS
    
 
-    def step(self, simgr, stash="active", **kwargs):
-        # what i think we should do is rewrite the step method and intercept the part that gets the successors with the following if stmt:
+    # def step(self, simgr, stash="active", **kwargs):
+    #     # what i think we should do is rewrite the step method and intercept the part that gets the successors with the following if stmt:
 
-        simgr = simgr.step(stash=stash, **kwargs) # this step method wont return sucessors, need to use sim_state's step method, hence the above comment
-        # i think we can use most of their step method, and there's an if stmt thats like (if something is a tuple)
-        # and we add our else clause onto it 
-        if len(simgr.successors) == 2:
-            hi=2
-            # we are at a branch
-        else:
-            hi = 1
-            # update dynamic dependency graph (when do we even make this? setup? and whats the diff to static)
+    #     simgr = simgr.step(stash=stash, **kwargs) # this step method wont return sucessors, need to use sim_state's step method, hence the above comment
+    #     # i think we can use most of their step method, and there's an if stmt thats like (if something is a tuple)
+    #     # and we add our else clause onto it 
+    #     if len(simgr.successors) == 2:
+    #         hi=2
+    #         # we are at a branch
+    #     else:
+    #         hi = 1
+    #         # update dynamic dependency graph (when do we even make this? setup? and whats the diff to static)
 
 
 ''' hiiiii
