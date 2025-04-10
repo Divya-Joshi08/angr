@@ -10,14 +10,17 @@ l = logging.getLogger(name=__name__)
 
 class RSD(ExplorationTechnique):
 
-    def __init__(self, cdg=None):
+    def __init__(self, cdg=None, covered_lines=None):
         super().__init__()
         self.cdg = cdg
+        self.covered_lines = covered_lines
 
     def setup(self, simgr):
         if (self.cdg is None):
             cfg = self.project.analyses.CFGEmulated() # i am not sure if we need to set any of the parameters 
             self.cdg = self.project.analyses.CDG(cfg)
+        if (self.covered_lines is None):
+            self.covered_lines = set()
 
 
     def step(
@@ -96,14 +99,9 @@ class RSD(ExplorationTechnique):
 
             pre_errored = len(error_list)
 
+            self.covered_lines.add(state.regs._ip) # add the program counter to covered lines
             # EXECUTION HAPPENS IN THE FOLLOWING LINE
             successors = simgr.step_state(state, successor_func=successor_func, error_list=error_list, **run_args) # i said simgr.step_state but idk how simgr works as a parameter, but this is what other exp techs have done
-
-            '''
-            could put the intercept here, but im not sure if any of the below lines need to happen before we can intercept...another thing to look into later
-            also just to remind myself, the successors number we want is state.step() return value, but state.step and simgr.step_state call the same factory method so i think its the right thing to use in the if stmt
-            '''
-            
             
             # ---------------------------------------handle degenerate stepping cases here. desired behavior: ------------------------------------------
             # if a step produced only unsat states, always add them to the unsat stash since this usually indicates bugs
@@ -128,14 +126,22 @@ class RSD(ExplorationTechnique):
             for to_stash, successor_states in successors.items():
                 bucket[to_stash or target_stash].extend(successor_states)
 
-            
+            # ----------------------------------------INTERCEPT IS HERE--------------------------------------------
             sim_succ = simgr.successors(state)
+
+            # add program counters to the covered lines set
             succ_list = sim_succ.successors
             if len(succ_list) == 2:
                 print("WE ARE AT A BRANCH")
                 print(simgr.stashes)
             else:
-                print("NOT AT BRANCH")
+                print("NOT AT BRANCH"+str(succ_list[0].regs._ip))
+                #TODO update dynamic dependency graph
+                if (len(succ_list) != 0 and succ_list[0].regs._ip not in self.covered_lines):
+                    print("reached an uncovered line")
+                    #TODO update relevant static branches 
+                    #TODO refine relevant location sets
+            #----------------------------------THIS IS WHERE OUR CODE ENDS-------------------------------------------
 
         simgr._clear_states(stash=stash)
         for to_stash, states in bucket.items():
@@ -148,19 +154,6 @@ class RSD(ExplorationTechnique):
             return step_func(simgr)
         return simgr # I CHANGED THIS
    
-
-    # def step(self, simgr, stash="active", **kwargs):
-    #     # what i think we should do is rewrite the step method and intercept the part that gets the successors with the following if stmt:
-
-    #     simgr = simgr.step(stash=stash, **kwargs) # this step method wont return sucessors, need to use sim_state's step method, hence the above comment
-    #     # i think we can use most of their step method, and there's an if stmt thats like (if something is a tuple)
-    #     # and we add our else clause onto it 
-    #     if len(simgr.successors) == 2:
-    #         hi=2
-    #         # we are at a branch
-    #     else:
-    #         hi = 1
-    #         # update dynamic dependency graph (when do we even make this? setup? and whats the diff to static)
 
 
 ''' hiiiii
