@@ -4,6 +4,7 @@ import logging
 from .base import ExplorationTechnique
 from angr.engines.successors import SimSuccessors
 from collections import defaultdict
+from angr.sim_manager import SimulationManager
 
 l = logging.getLogger(name=__name__)
 
@@ -97,7 +98,6 @@ class RSD(ExplorationTechnique):
 
             # EXECUTION HAPPENS IN THE FOLLOWING LINE
             successors = simgr.step_state(state, successor_func=successor_func, error_list=error_list, **run_args) # i said simgr.step_state but idk how simgr works as a parameter, but this is what other exp techs have done
-            
 
             '''
             could put the intercept here, but im not sure if any of the below lines need to happen before we can intercept...another thing to look into later
@@ -128,11 +128,12 @@ class RSD(ExplorationTechnique):
             for to_stash, successor_states in successors.items():
                 bucket[to_stash or target_stash].extend(successor_states)
 
+            
             sim_succ = simgr.successors(state)
-            succ_list = sim_succ.all_successors
+            succ_list = sim_succ.successors
             if len(succ_list) == 2:
                 print("WE ARE AT A BRANCH")
-                return None
+                print(simgr.stashes)
             else:
                 print("NOT AT BRANCH")
 
