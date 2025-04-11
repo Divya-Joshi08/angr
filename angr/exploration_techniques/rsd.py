@@ -5,6 +5,7 @@ from .base import ExplorationTechnique
 from angr.engines.successors import SimSuccessors
 from collections import defaultdict
 from angr.sim_manager import SimulationManager
+from angr.knowledge_plugins.cfg import CFGENode
 
 l = logging.getLogger(name=__name__)
 
@@ -16,9 +17,17 @@ class RSD(ExplorationTechnique):
         self.covered_lines = covered_lines
 
     def setup(self, simgr):
+        # static control dependency graph
         if (self.cdg is None):
-            cfg = self.project.analyses.CFGEmulated() # i am not sure if we need to set any of the parameters 
-            self.cdg = self.project.analyses.CDG(cfg)
+            self.cfg = self.project.analyses.CFGEmulated(keep_state=True) # i am not sure if we need to set any of the parameters 
+            self.cdg = self.project.analyses.CDG(self.cfg)
+        
+        # map from addresses to nodes, so that we can get the node to look in the CDG
+        self.nodemap = dict()
+        for node in list(self.cdg._graph.nodes()):
+            self.nodemap[node.addr] = node
+        
+        # set to check if a line is covered 
         if (self.covered_lines is None):
             self.covered_lines = set()
 
@@ -139,7 +148,12 @@ class RSD(ExplorationTechnique):
                 #TODO update dynamic dependency graph
                 if (len(succ_list) != 0 and succ_list[0].regs._ip not in self.covered_lines):
                     print("reached an uncovered line")
-                    #TODO update relevant static branches 
+                    new_line = succ_list[0].regs._ip
+
+                    #TODO update relevant static branches:
+                    if (state.solver.eval(new_line) in self.nodemap): # this means it is directly dependent on control instruction, if its not it will get covered anyway
+                        newline_node = self.nodemap[state.solver.eval(new_line)]
+                        self.update_relevant_static_branches(newline_node)
                     #TODO refine relevant location sets
             #----------------------------------THIS IS WHERE OUR CODE ENDS-------------------------------------------
 
@@ -153,6 +167,25 @@ class RSD(ExplorationTechnique):
         if step_func is not None:
             return step_func(simgr)
         return simgr # I CHANGED THIS
+    
+    def update_relevant_static_branches(self, node):
+        print("updating relevant static branches")
+        # so we just marked something covered 
+        # it could affect all parent branches
+        # so look at its parent. if this was the last uncovered branch of that parent, then the parent is no longer relevant.
+        # ONLY IF we mark the parent irrelevant, the next parent could be irrelevant
+        '''
+        while (irrelevant guardians queue is nonempty):
+            pop a guardian
+            for each RELEVANT guardian:
+                relevant is false (for now)
+                for each child of this guardian:
+                    if it is a relevant branch or an uncovered line:
+                        relevant is true, break
+                if relevant is false:
+                    mark this guardian irrelevant
+                    add it to the queue
+        '''
    
 
 
