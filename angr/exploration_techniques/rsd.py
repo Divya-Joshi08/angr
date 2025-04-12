@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import claripy
 
 from .base import ExplorationTechnique
 from angr.engines.successors import SimSuccessors
@@ -11,16 +12,27 @@ l = logging.getLogger(name=__name__)
 
 class RSD(ExplorationTechnique):
 
-    def __init__(self, cdg=None, covered_lines=None):
+    def __init__(self, cdg=None, covered_lines=None, relevant_branches=None):
         super().__init__()
         self.cdg = cdg
         self.covered_lines = covered_lines
+        self.relevant_branches = relevant_branches
 
     def setup(self, simgr):
         # static control dependency graph
         if (self.cdg is None):
             self.cfg = self.project.analyses.CFGEmulated(keep_state=True) # i am not sure if we need to set any of the parameters 
             self.cdg = self.project.analyses.CDG(self.cfg)
+        
+        # create relevant branches set (basically all branches)
+        self.relevant_branches = set()
+        for node in list(self.cfg.graph.nodes):
+            if node.simprocedure_name != 'PathTerminator':
+                state = node.input_state
+                succ = simgr.successors(state)
+                succlist = succ.successors
+                if len(succlist) > 1:
+                    self.relevant_branches.add(state.regs._ip)
         
         # map from addresses to nodes, so that we can get the node to look in the CDG
         self.nodemap = dict()
@@ -108,7 +120,7 @@ class RSD(ExplorationTechnique):
 
             pre_errored = len(error_list)
 
-            self.covered_lines.add(state.regs._ip) # add the program counter to covered lines
+            # self.covered_lines.add(state.regs._ip) # add the program counter to covered lines
             # EXECUTION HAPPENS IN THE FOLLOWING LINE
             successors = simgr.step_state(state, successor_func=successor_func, error_list=error_list, **run_args) # i said simgr.step_state but idk how simgr works as a parameter, but this is what other exp techs have done
             
@@ -144,17 +156,25 @@ class RSD(ExplorationTechnique):
                 print("WE ARE AT A BRANCH")
                 print(simgr.stashes)
             else:
-                print("NOT AT BRANCH"+str(succ_list[0].regs._ip))
+                print("NOT AT BRANCH", str(state.regs._ip))
                 #TODO update dynamic dependency graph
-                if (len(succ_list) != 0 and succ_list[0].regs._ip not in self.covered_lines):
+                if (state.regs._ip not in self.covered_lines):
                     print("reached an uncovered line")
-                    new_line = succ_list[0].regs._ip
+                    line = state.regs._ip
+                    self.covered_lines.add(line)
 
                     #TODO update relevant static branches:
-                    if (state.solver.eval(new_line) in self.nodemap): # this means it is directly dependent on control instruction, if its not it will get covered anyway
-                        newline_node = self.nodemap[state.solver.eval(new_line)]
+                    if (state.solver.eval(line) in self.nodemap): # this means it is directly dependent on control instruction, if its not it will get covered anyway
+                        newline_node = self.nodemap[state.solver.eval(line)]
                         self.update_relevant_static_branches(newline_node)
                     #TODO refine relevant location sets
+                
+                #TODO find match
+
+                '''
+                if (state has match or is at exit):
+                    #TODO construct relevant location sets 
+                '''
             #----------------------------------THIS IS WHERE OUR CODE ENDS-------------------------------------------
 
         simgr._clear_states(stash=stash)
@@ -174,6 +194,33 @@ class RSD(ExplorationTechnique):
         # it could affect all parent branches
         # so look at its parent. if this was the last uncovered branch of that parent, then the parent is no longer relevant.
         # ONLY IF we mark the parent irrelevant, the next parent could be irrelevant
+        print("node:"+str(node))
+        queue = [] # of nodes to check
+        # for parent in self.cdg.get_guardians(node):
+        #     # print("parent: "+str(parent))
+        #     if claripy.BVV(parent.addr, 64) in self.relevant_branches:
+        #         # print("appending"+str(parent))
+        #         queue.append(parent)
+        # if len(queue) > 0:
+        #     print(queue)
+
+        queue.append(node)
+
+        while len(queue) > 0:
+            node = queue.pop(0)
+            for parent in self.cdg.get_guardians(node):
+                if claripy.BVV(parent.addr, 64) in self.relevant_branches:
+                    relevant = False
+                    for child in self.cdg.get_dependants(parent):
+                        addr = claripy.BVV(child.addr, 64)
+                        if (addr in self.relevant_branches) or (addr not in self.covered_lines):
+                            relevant = True 
+                            break
+                    if not relevant:
+                        self.relevant_branches.remove(claripy.BVV(parent.addr, 64)) 
+                        queue.append(parent)
+        print("relevant branches", self.relevant_branches)
+
         '''
         while (irrelevant guardians queue is nonempty):
             pop a guardian
