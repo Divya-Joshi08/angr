@@ -12,11 +12,12 @@ l = logging.getLogger(name=__name__)
 
 class RSD(ExplorationTechnique):
 
-    def __init__(self, cdg=None, covered_lines=None, relevant_branches=None):
+    def __init__(self, cdg=None, covered_lines=None, relevant_branches=None, constraintmap=None):
         super().__init__()
         self.cdg = cdg
         self.covered_lines = covered_lines
         self.relevant_branches = relevant_branches
+        self.constraintmap = constraintmap
 
     def setup(self, simgr):
         # static control dependency graph
@@ -42,6 +43,9 @@ class RSD(ExplorationTechnique):
         # set to check if a line is covered 
         if (self.covered_lines is None):
             self.covered_lines = set()
+        
+        # constraint map - a dict with key ip and value list of constraint sets
+        self.constraintmap = dict()
 
 
     def step(
@@ -170,9 +174,10 @@ class RSD(ExplorationTechnique):
                     #TODO refine relevant location sets
                 
                 #TODO find match
+                self.find_match(state)
 
                 '''
-                if (state has match or is at exit):
+                if (state is at exit):
                     #TODO construct relevant location sets 
                 '''
             #----------------------------------THIS IS WHERE OUR CODE ENDS-------------------------------------------
@@ -187,6 +192,46 @@ class RSD(ExplorationTechnique):
         if step_func is not None:
             return step_func(simgr)
         return simgr # I CHANGED THIS
+    
+    def find_match(self, state):
+        ip = state.regs._ip
+        constraintslist = self.constraintmap[ip]
+        stateconstraints = state.solver.constraints 
+        '''
+        for constraint set in constraintslist:
+            s = new solver
+            create the boolean expression / add the stuff to the solver
+            if (s.satisfiable()):
+                state is redundant
+                call construct_relevant_location_sets
+        '''
+    
+    def construct_relevant_location_sets(self, state):
+        hi=1 
+        # the state parameter will either be an exit state or a state that is getting pruned 
+        '''
+        if (this is an exit state):
+            relevant location set is empty
+
+        while (we are not at the entry state - or state is not None if we want to run on entry state which i think we do):
+            take the union of relevant location set of immediate successors (then is it static successors because dynamic wouldnt have a fork? - the answer to this is very confusing)
+            ...
+            get constraints for the relevant locations (using state.solver.constraints or whatever it is)
+            use them to make relevant constraint set
+            self.add_constraints_to_constraintmap()
+            state = state.predecessor 
+
+        '''
+    
+    def add_constraints_to_constraintmap(self, ip, constraints):
+        # ip is the program counter (type should be an int probably), constraints is the constraint set (type is set)
+        if (ip in self.constraintmap):
+            self.constraintmap[ip].append(constraints)
+            # and now we add to tree
+        else:
+            self.constraintmap[ip] = []
+            self.constraintmap[ip].append(constraints)
+            # and now we create tree
     
     def update_relevant_static_branches(self, node):
         print("updating relevant static branches")
@@ -297,7 +342,9 @@ Notes:
 (relvant constraints are constraints on relevant locations/variables)
 (relevant locations are the ones that affect relevant static branches further down, this is why relevant location sets for the state are only constructed when the state reaches an exit - uhhh there's something confusing about this)
 
-static control dependence graph
-- 
+pseudocode ill write today
+- constructing the relevant constraint tree (this happens once the relevant constraint set at a line is completely built. we put that set into the tree for that line. do i need multiple trees for multiple paths? it seems like it)
+- finding a match. this happens with the current state in step, and we just search through the tree for the corresponding instruction and see if the tree constraints imply the state constraints.
+- refining relevant constraint sets. when we mark a branch irrelevant, all the locations that ONLY control that branch don't matter anymore. so we can remove those constraints from the relevant constraint sets. 
 '''
 
