@@ -1,41 +1,42 @@
 from angr import BP_BEFORE
 from . import Analysis
 from angr.analyses import AnalysesHub
+from angr.state_plugins.sim_action import SimActionData
 from angr.sim_state import SimState
 import networkx as nx
 
 class Node: #byte-level writes
     def __init__(self, addr):
         self.addr = addr
+        """THings to include:
+        size, teh state id, maybe if somethings symbolic"""
         
         
-class DynamicDependenceGraph(Analysis): 
-    #Remember to add hooks to memeory so that this gets changed dynamically
-    def __init__(self):
+class DynamicDependenceGraph(Analysis):
+    """I've changed the design. Instead of intercepting each write, read or
+    branch before it occurs, allow step to run so all states are added in parallel
+    then we can ttake advantage of history and actions to construct the graph""" 
+    
+    #IT MIGHT BE POSSIBLE TO HAVE BOTH CONCRETE AND SYMBOLIC, i think cases would be different
+    def __init__(self, project):
         self.graph = nx.MultiDiGraph()
-        entry_state = self.project.factory.entry_state()
-        self._hook_state(entry_state)
+        super().__init__(project=project)
+        
+    def _on_write(state,action):
+        #get the address and size
+        #create the node and add it to graph
+        #data dependencies
+        #control dependencies
+        
+    def ddg_step(self, state):
+        for action in state.history.recent_actions:
+            if isinstance(action, SimActionData) and action.action == 'write':
+                self._on_write(state, action)
+                
     
-    def _hook_state(self, state):
-        state.inspect.b('mem_write', when=BP_BEFORE, action=self._on_write(state))#does before or after matter
-        #prob need to add reads and branches
+
         
-    def _add_dependency(self, src, dst, type):
-        self.graph.add_edge(src, dst, type=type) #I think this is the attribute, not sure
     
-    def _on_write(self, state):
-        #get where the write is occuring and what is being written(what is being written might not be necessary im not sure)
-        
-        #different case base on fi addresses are symbolic or concrete, remember to do the same check in aliasing
-        
-        #create a node for the graph and add it to the graph(each write is unique)
-        
-        #find data dependencies
-            #find memory reads from the state tos ee if write is using a value that was read before
-            
-        #find control dependencies
-        
-        #find potential dependencies
 
         
     
